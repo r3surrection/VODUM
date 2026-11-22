@@ -29,6 +29,7 @@ from core.global_access_guard import register_global_access_guard
 from utils.version import load_app_version
 
 from api.subscriptions import subscriptions_api
+from api.dashboard import dashboard_api
 from blueprints.users import users_bp
 
 from web.helpers import get_db, table_exists, close_db
@@ -493,6 +494,7 @@ def create_app():
 
     # Blueprints
     app.register_blueprint(subscriptions_api)
+    app.register_blueprint(dashboard_api)
     app.register_blueprint(users_bp)
 
     # Global access control must not depend on any feature route module.

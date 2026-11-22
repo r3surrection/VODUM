@@ -29,6 +29,9 @@ def classify_route_path(path: str) -> str:
         return "admin_auth"
     if normalized == "/setup" or normalized.startswith("/setup/") or normalized in SETUP_FLOW_EXACT:
         return "setup"
+    if normalized.startswith("/api/dashboard/"):
+        # Fork addition: read-only dashboard API, authenticated by its own API key.
+        return "dashboard_api"
     if normalized.startswith("/api/portal/"):
         return "portal"
     if normalized == "/portal" or normalized.startswith("/portal/"):

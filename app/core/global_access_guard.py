@@ -130,6 +130,15 @@ def register_global_access_guard(app) -> None:
         expected_admin_host = _configured_admin_hostname()
         request_host = _request_hostname(request.host)
 
+        # Fork addition: the dashboard API is GET-only, 404 on the portal host and
+        # authenticates itself with an API key (see api/dashboard.py), not a session.
+        if access_scope == "dashboard_api":
+            if request.method not in ("GET", "HEAD"):
+                abort(404)
+            if expected_portal_host and request_host == expected_portal_host:
+                abort(404)
+            return None
+
         # Isolate the virtual hosts only when a distinct Admin host is explicitly
         # configured. With one shared host, /login and /portal/login must coexist
         # and the existing path, role and server-side session checks provide the
