@@ -15,6 +15,7 @@ import hmac
 import json
 import os
 import re
+import threading
 import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -39,6 +40,12 @@ MAX_USER_LIMIT = 5000
 MAX_EXPIRING_DAYS = 3650
 LIVE_WINDOW_SECONDS = 120
 HISTORY_DAYS = 7
+GIFT_REASON_PREFIX = "Dashboard"
+GIFT_DAYS_ALLOWED = (180, 365)  # the "six months" / "one year" presets of the gift form
+GIFT_DEFAULT_DAYS = 365
+GIFT_NOTE_MAX = 200
+GIFT_IDEMPOTENCY_SECONDS = 600
+GIFT_ELIGIBLE_STATUSES = ("active", "pre_expired", "reminder")
 FINAL_REQUEST_STATES = ("declined", "failed", "available", "deleted")
 
 # Vodum's stored status -> (API slug, label).
@@ -265,6 +272,7 @@ def _gift(row) -> dict:
         "at": _iso(row["created_at"]),
         "days_added": row["days_added"],
         "reason": _scrub(row["reason"], 200),
+        "source": "Dashboard" if str(row["reason"] or "").startswith(GIFT_REASON_PREFIX) else "manual",
     }
 
 
@@ -689,3 +697,98 @@ def tasks():
 @dashboard_api.get("/stats")
 def stats():
     return _json(_build_stats(get_db()))
+
+
+# ------------------------------------------------------------------
+# The only write route: gift days to one member
+# ------------------------------------------------------------------
+_gift_lock = threading.Lock()
+_gift_replays: dict[str, tuple[float, tuple, dict]] = {}
+
+
+def _gift_error(message: str, http_status: int, **extra):
+    response = jsonify({"error": message, **extra})
+    response.status_code = http_status
+    return response
+
+
+@dashboard_api.post("/users/<int:user_id>/gift")
+def gift_user(user_id: int):
+    """Gift days through the same code path as Subscriptions > Gifts (one user)."""
+    body = request.get_json(silent=True) if request.is_json else None
+    if body is None:
+        body = {}
+    if not isinstance(body, dict):
+        return _gift_error("body must be a JSON object", 400)
+
+    days = body.get("days", GIFT_DEFAULT_DAYS)
+    if type(days) is not int or days not in GIFT_DAYS_ALLOWED:
+        return _gift_error("days must be one of: " + ", ".join(map(str, GIFT_DAYS_ALLOWED)), 400)
+    note = body.get("note")
+    if note is not None:
+        if not isinstance(note, str):
+            return _gift_error("note must be a string", 400)
+        note = "".join(ch for ch in note if ch.isprintable()).strip()
+        if len(note) > GIFT_NOTE_MAX:
+            return _gift_error(f"note must be at most {GIFT_NOTE_MAX} characters", 400)
+    request_id = (request.headers.get("X-Request-Id") or "").strip()
+    if request_id and (len(request_id) > 128 or not request_id.isprintable()):
+        return _gift_error("X-Request-Id must be printable and at most 128 characters", 400)
+
+    fingerprint = (user_id, days, note or "")
+    with _gift_lock:
+        mono = time.monotonic()
+        for key in [k for k, v in _gift_replays.items() if mono - v[0] > GIFT_IDEMPOTENCY_SECONDS]:
+            del _gift_replays[key]
+        if request_id and request_id in _gift_replays:
+            _, cached_fingerprint, cached_payload = _gift_replays[request_id]
+            if cached_fingerprint != fingerprint:
+                return _gift_error("X-Request-Id was already used with different parameters", 409)
+            response = jsonify(cached_payload)
+            response.headers["Idempotent-Replay"] = "true"
+            return response
+
+        db = get_db()
+        row = db.query_one(
+            """
+            SELECT u.id, u.status, u.expiration_date,
+                   EXISTS(SELECT 1 FROM media_users mu WHERE mu.vodum_user_id = u.id) AS has_account
+            FROM vodum_users u WHERE u.id = ?
+            """,
+            (user_id,),
+        )
+        if row is None:
+            abort(404)
+        slug = _status(row["status"])
+        if str(row["status"] or "").strip().lower() not in GIFT_ELIGIBLE_STATUSES:
+            return _gift_error("user status does not allow a gift", 409, status=slug)
+        if not row["has_account"]:
+            return _gift_error("user has no media account", 409, status=slug)
+
+        from api.subscriptions import apply_gift_run  # same path as the Gifts page
+
+        reason = GIFT_REASON_PREFIX + (f": {note}" if note else "")
+        run_id, _updated, results = apply_gift_run(
+            db, [{"id": user_id, "expiration_date": row["expiration_date"]}],
+            "user", None, days, reason,
+        )
+        if not run_id or not results or not results[0][3]:
+            log.error("dashboard gift failed for user %s", user_id)
+            return _gift_error("gift failed", 500)
+        _, old_exp, new_exp, _ok = results[0]
+        after = db.query_one("SELECT status FROM vodum_users WHERE id = ?", (user_id,))
+        new_slug = _status(after["status"] if after else None)
+        payload = {
+            "generated_at": _iso(_now()),
+            "user_id": user_id,
+            "gift_id": int(run_id),
+            "days_added": days,
+            "old_expiration_date": old_exp,
+            "new_expiration_date": new_exp,
+            "status": new_slug,
+            "status_label": STATUS_LABELS[new_slug],
+        }
+        if request_id:
+            _gift_replays[request_id] = (mono, fingerprint, payload)
+        log.info("dashboard gift: user=%s days=%s run=%s", user_id, days, run_id)
+        return jsonify(payload)

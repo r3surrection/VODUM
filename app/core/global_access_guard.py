@@ -15,7 +15,7 @@ from core.auth_principal import (
     validate_portal_principal,
 )
 from core.portal_account_state import effective_portal_account_state, state_message
-from core.route_access_policy import classify_route_path
+from core.route_access_policy import classify_route_path, is_dashboard_write_path
 from db_manager import isolated_read_operation
 from logging_utils import get_logger
 from web.helpers import get_db
@@ -133,8 +133,11 @@ def register_global_access_guard(app) -> None:
         # Fork addition: the dashboard API is GET-only, 404 on the portal host and
         # authenticates itself with an API key (see api/dashboard.py), not a session.
         if access_scope == "dashboard_api":
-            if request.method not in ("GET", "HEAD"):
+            allowed_write = request.method == "POST" and is_dashboard_write_path(request.path)
+            if request.method not in ("GET", "HEAD") and not allowed_write:
                 abort(404)
+            if is_dashboard_write_path(request.path) and not allowed_write:
+                abort(404)  # GET on the POST-only route must not answer 405
             if expected_portal_host and request_host == expected_portal_host:
                 abort(404)
             return None

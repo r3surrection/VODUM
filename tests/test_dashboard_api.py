@@ -12,6 +12,7 @@ import pytest
 from flask import Flask
 
 from api import dashboard
+from core.csrf_security import csrf_request_guard
 from core.global_access_guard import register_global_access_guard
 from core.portal_media_request_jobs import JOB_SCHEMA, JOB_INDEXES
 
@@ -67,7 +68,11 @@ def _build_db(path: Path):
     conn.execute("INSERT INTO servers(id,name,server_identifier,type,status) VALUES (3,'Seerr','id3','seerr','up')")
     conn.executemany("INSERT INTO libraries(id,server_id,section_id,name,type) VALUES (?,?,?,?,?)",
                      [(1, 1, "1", "Movies", "movie"), (2, 1, "2", "Shows", "show"), (3, 2, "1", "Anime", "show")])
+    for uid, name in ((14, "nina"), (15, "oscar")):  # identical twins for the gift parity test
+        conn.execute("INSERT INTO vodum_users(id,username,status,expiration_date,subscription_template_id) "
+                     "VALUES (?,?, 'reminder','2026-11-26',1)", (uid, name))
     conn.executemany("INSERT INTO media_users(id,server_id,vodum_user_id,username,email,type,role) VALUES (?,?,?,?,?,?,?)",
+                     [(10 + n, 1, n, f"acct{n}", None, "plex", "friend") for n in (4, 5, 6, 7, 8, 10, 11, 14, 15)] +
                      [(1, 1, 1, "alice-plex", MAIL, "plex", "friend"),
                       (2, 2, 1, "alice-plex", MAIL, "plex", "friend"),
                       (3, 1, 2, "bob-plex", None, "plex", "friend")])
@@ -132,10 +137,13 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("VODUM_DASHBOARD_API_KEY", KEY)
     monkeypatch.setenv("VODUM_ADMIN_PUBLIC_URL", f"https://{ADMIN_HOST}")
     monkeypatch.setenv("VODUM_IP_FILTER", "0")
+    monkeypatch.setenv("DATABASE_PATH", str(db_path))
     monkeypatch.setattr(dashboard, "_now", lambda: NOW)
+    dashboard._gift_replays.clear()
     app = Flask(__name__)
     app.config.update(DATABASE=str(db_path), BACKUP_DIR=str(backups), SECRET_KEY="t")
     app.register_blueprint(dashboard.dashboard_api)
+    app.before_request(csrf_request_guard)  # same order as app.py: CSRF first, then the access guard
     register_global_access_guard(app)
     return app
 
@@ -182,9 +190,9 @@ def test_portal_host_is_404_even_with_valid_key(client, path):
 
 
 @pytest.mark.parametrize("method", ["post", "put", "patch", "delete"])
-def test_write_methods_are_404_not_405(client, method):
+def test_write_methods_are_never_405_or_2xx(client, method):
     response = getattr(client, method)("/api/dashboard/v1/users", headers={"X-Api-Key": KEY, "Host": ADMIN_HOST})
-    assert response.status_code == 404
+    assert response.status_code in (403, 404)  # 403 = the app-wide CSRF guard, which runs first
 
 
 def test_internal_host_name_works(client):
@@ -230,7 +238,7 @@ def test_all_status_cases(client):
 @pytest.mark.parametrize("query,expected", [
     ("active", {"alice", "ivan", "judy", "kim", "lee"}),
     ("expiring_soon", {"bob"}), ("Expiring soon", {"bob"}), ("pre_expired", {"bob"}),
-    ("reminder", {"carol"}), ("Expired", {"dave", "No Name"}), ("invited", {"erin"}),
+    ("reminder", {"carol", "nina", "oscar"}), ("Expired", {"dave", "No Name"}), ("invited", {"erin"}),
     ("removed", {"frank"}), ("unfriended", {"frank"}), ("suspended", {"grace"}), ("unknown", {"heidi"}),
 ])
 def test_status_filter(client, query, expected):
@@ -245,7 +253,7 @@ def test_status_filter_rejects_unknown_value(client):
 
 def test_limit(client):
     data = get(client, "/users", query_string={"limit": 3}).get_json()
-    assert data["count"] == 3 and data["total"] == 13
+    assert data["count"] == 3 and data["total"] == 15
     assert get(client, "/users", query_string={"limit": 0}).status_code == 400
     assert get(client, "/users", query_string={"limit": "x"}).status_code == 400
     assert get(client, "/users", query_string={"limit": 999999}).status_code == 400
@@ -319,15 +327,15 @@ def test_expiring_boundaries(client):
     names = [u["display_name"] for u in data["users"]]
     # judy (today) included, kim (exactly 30 days) included, lee (31) and expired excluded,
     # invited/removed excluded, lifetime (no date) excluded.
-    assert names == ["judy", "carol", "heidi", "grace", "bob", "kim"]
-    assert [u["days_left"] for u in data["users"]] == [0, 3, 7, 8, 17, 30]
-    assert data["days"] == 30 and data["count"] == 6
+    assert names == ["judy", "carol", "nina", "oscar", "heidi", "grace", "bob", "kim"]
+    assert [u["days_left"] for u in data["users"]] == [0, 3, 3, 3, 7, 8, 17, 30]
+    assert data["days"] == 30 and data["count"] == 8
 
 
 def test_expiring_days_parameter(client):
     names = lambda d: [u["display_name"] for u in get(client, "/expiring", query_string={"days": d}).get_json()["users"]]
     assert names(0) == ["judy"]
-    assert names(3) == ["judy", "carol"]
+    assert names(3) == ["judy", "carol", "nina", "oscar"]
     assert names(2) == ["judy"]
     assert names(31)[-1] == "lee"
     assert get(client, "/expiring", query_string={"days": -1}).status_code == 400
@@ -392,15 +400,15 @@ def test_tasks(client):
 # ------------------------------------------------------------------ stats
 def test_stats(client):
     data = get(client, "/stats").get_json()
-    assert data["users_total"] == 13
+    assert data["users_total"] == 15
     assert data["users_by_status"] == {
-        "active": 5, "expiring_soon": 1, "reminder": 1, "expired": 2,
+        "active": 5, "expiring_soon": 1, "reminder": 3, "expired": 2,
         "invited": 1, "removed": 1, "suspended": 1, "unknown": 1}
-    assert data["users_by_plan"] == {"(none)": 1, "Forever": 1, "Monthly": 11}
+    assert data["users_by_plan"] == {"(none)": 1, "Forever": 1, "Monthly": 13}
     assert data["requests_total"] == 6 and data["requests_open"] == 3
     assert data["requests_by_state"] == {
         "approved": 1, "available": 1, "declined": 1, "done": 1, "pending_approval": 1, "queued": 1}
-    assert data["expiring_7d"] == 3 and data["expiring_30d"] == 6
+    assert data["expiring_7d"] == 5 and data["expiring_30d"] == 8
 
 
 # ------------------------------------------------------------------ time handling

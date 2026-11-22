@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from flask import abort, request, session
 
+from core.route_access_policy import is_dashboard_write_path
 from web.security import csrf_tokens_match
 
 
@@ -11,6 +12,10 @@ STATE_CHANGING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 def csrf_request_guard() -> None:
     """Reject every state-changing request without a session-bound CSRF token."""
     if request.method not in STATE_CHANGING_METHODS:
+        return
+
+    # Fork addition: the dashboard gift route authenticates with an API key, not a session.
+    if request.method == "POST" and is_dashboard_write_path(request.path):
         return
 
     sent_token = (

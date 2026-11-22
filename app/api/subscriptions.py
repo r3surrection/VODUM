@@ -572,6 +572,80 @@ def api_gift_time_to_server(server_id):
     })
 
 
+def apply_gift_run(db, users, target_type, target_server_id, days, reason):
+    """
+    Crée un RUN de gift et prolonge chaque utilisateur de `days` jours.
+
+    Chemin unique partagé par l'interface (Subscriptions > Gifts) et par l'API
+    dashboard : historique du run, mise à jour du statut, réactivation et
+    notifications passent par update_user_expiration.
+    Retourne (run_id, nombre mis à jour, [(user_id, ancienne, nouvelle, ok)]).
+    """
+    # --------------------------------------------------
+    # Historique : 1 ligne par gift (RUN)
+    # --------------------------------------------------
+    db.execute(
+        """
+        INSERT INTO subscription_gift_runs
+            (target_type, target_server_id, days_added, reason, users_updated)
+        VALUES (?, ?, ?, ?, 0)
+        """,
+        (target_type, target_server_id, days, reason or None)
+    )
+
+    # SQLite: récupère l'id du run créé
+    run_id_row = db.query_one("SELECT last_insert_rowid() AS id")
+    run_id = run_id_row["id"] if run_id_row else None
+
+    if not run_id:
+        return None, 0, []
+
+    # --------------------------------------------------
+    # Mise à jour + détails du run (users)
+    # --------------------------------------------------
+    updated = 0
+    results = []
+
+    for u in users:
+        try:
+            current_exp = date.fromisoformat(u["expiration_date"])
+        except Exception:
+            current_exp = date.today()
+
+        new_exp = (current_exp + timedelta(days=days)).isoformat()
+
+        ok, _msg = update_user_expiration(
+            u["id"],
+            new_exp,
+            reason=reason,
+            db=db
+        )
+        results.append((u["id"], current_exp.isoformat(), new_exp, ok))
+
+        if ok:
+            updated += 1
+
+            # 1 ligne par user DANS LE DETAIL du run (pas dans l'historique principal)
+            db.execute(
+                """
+                INSERT OR IGNORE INTO subscription_gift_run_users
+                    (run_id, vodum_user_id)
+                VALUES (?, ?)
+                """,
+                (run_id, u["id"])
+            )
+
+    # --------------------------------------------------
+    # Update du compteur final sur le run
+    # --------------------------------------------------
+    db.execute(
+        "UPDATE subscription_gift_runs SET users_updated = ? WHERE id = ?",
+        (updated, run_id)
+    )
+
+    return run_id, updated, results
+
+
 @subscriptions_api.route("/api/subscriptions/gift", methods=["POST"])
 def api_gift_subscription():
     # --------------------------------------------------
@@ -673,64 +747,12 @@ def api_gift_subscription():
     else:
         return jsonify({"error": "invalid target_type"}), 400
 
-    # --------------------------------------------------
-    # Historique : 1 ligne par gift (RUN)
-    # --------------------------------------------------
-    db.execute(
-        """
-        INSERT INTO subscription_gift_runs
-            (target_type, target_server_id, days_added, reason, users_updated)
-        VALUES (?, ?, ?, ?, 0)
-        """,
-        (target_type, target_server_id, days, reason or None)
+    run_id, updated, _results = apply_gift_run(
+        db, users, target_type, target_server_id, days, reason
     )
-
-    # SQLite: récupère l'id du run créé
-    run_id_row = db.query_one("SELECT last_insert_rowid() AS id")
-    run_id = run_id_row["id"] if run_id_row else None
 
     if not run_id:
         return jsonify({"error": "failed to create gift run"}), 500
-
-    # --------------------------------------------------
-    # Mise à jour + détails du run (users)
-    # --------------------------------------------------
-    updated = 0
-
-    for u in users:
-        try:
-            current_exp = date.fromisoformat(u["expiration_date"])
-        except Exception:
-            current_exp = date.today()
-
-        new_exp = (current_exp + timedelta(days=days)).isoformat()
-
-        ok, _msg = update_user_expiration(
-            u["id"],
-            new_exp,
-            reason=reason
-        )
-
-        if ok:
-            updated += 1
-
-            # 1 ligne par user DANS LE DETAIL du run (pas dans l’historique principal)
-            db.execute(
-                """
-                INSERT OR IGNORE INTO subscription_gift_run_users
-                    (run_id, vodum_user_id)
-                VALUES (?, ?)
-                """,
-                (run_id, u["id"])
-            )
-
-    # --------------------------------------------------
-    # Update du compteur final sur le run
-    # --------------------------------------------------
-    db.execute(
-        "UPDATE subscription_gift_runs SET users_updated = ? WHERE id = ?",
-        (updated, run_id)
-    )
 
     return jsonify({
         "status": "ok",

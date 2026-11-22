@@ -3,7 +3,7 @@
 Ajout propre au fork `r3surrection/VODUM` (branche `fork/main`), absent d'upstream.
 VODUM ne documente aucune API HTTP ; ce blueprint ([`app/api/dashboard.py`](../app/api/dashboard.py))
 expose uniquement des données **en lecture** pour un tableau de bord externe.
-Aucune route d'écriture n'existe.
+Une seule route d'écriture existe : `POST /users/<id>/gift` (voir plus bas).
 
 ## Activation et accès
 
@@ -12,7 +12,7 @@ Aucune route d'écriture n'existe.
 | Variable d'environnement | `VODUM_DASHBOARD_API_KEY` : clé attendue. Vide ou absente = API désactivée (404). À fournir par l'environnement du stack, jamais dans le dépôt. |
 | En-tête | `X-Api-Key: <clé>` (comparaison à temps constant). |
 | Clé absente, vide ou fausse | **404** (pas 401), pour ne pas révéler l'existence de l'API. |
-| Méthodes | `GET` (et `HEAD`). Toute autre méthode : 404 (jamais 405). |
+| Méthodes | `GET` (et `HEAD`), plus `POST /users/<id>/gift`. Toute autre méthode : 404 (jamais 405 ; le garde CSRF global répond 403 à un `POST` ailleurs, comme pour toute l'application). |
 | Hôte du portail | 404 sur `/api/dashboard/*`, comme pour toutes les routes d'administration ([garde globale](../app/core/global_access_guard.py)). |
 | Filtre IP | Le filtre existant (`VODUM_IP_FILTER`, `VODUM_ALLOWED_NETS`) s'applique avant. Le défaut couvre `172.16.0.0/12`, donc le réseau Saltbox `172.19.0.0/16`. |
 | Session | Pas de session ni d'Authelia côté application : la clé suffit (la route est classée `dashboard_api` dans [`route_access_policy.py`](../app/core/route_access_policy.py)). |
@@ -44,6 +44,7 @@ authentifiées répondent `400 {"error": "..."}`.
 | `/servers` | état de chaque serveur, lectures en cours, historique 7 jours |
 | `/tasks` | tâches de fond (nom, dernier/prochain passage, résultat) |
 | `/stats` | compteurs |
+| `POST /users/<id>/gift` | prolonge un membre de 180 ou 365 jours (seule route d'écriture) |
 
 ### Modèle de données lu
 
@@ -224,6 +225,55 @@ terminé, ou qu'une demande Seerr suivie n'est pas `available`, `declined`,
 }
 ```
 
+## Gift : `POST /api/dashboard/v1/users/<id>/gift`
+
+Corps JSON : `{"days": 365, "note": "..."}`.
+
+- `days` : **180** (« six mois ») ou **365** (« un an »), défaut 365. Tout autre
+  valeur (y compris 182, un texte ou un booléen) : 400. Vodum enregistre les gifts
+  **en jours** (`subscription_gift_runs.days_added`) ; le formulaire Gifts propose
+  1, 7, 30, 90, **180** et **365** jours. Le bouton du tableau de bord utilise
+  donc exactement ces deux préréglages.
+- `note` : optionnelle, 200 caractères au plus (sinon 400). L'historique affiche
+  le motif `Dashboard` ou `Dashboard: <note>`, et l'API le restitue avec
+  `source: "Dashboard"` dans `gifts[]` / `last_gift`.
+- Chemin de code : `apply_gift_run` dans [`app/api/subscriptions.py`](../app/api/subscriptions.py),
+  extrait du gift de l'interface (Subscriptions > Gifts) et utilisé par les deux sans
+  changement de comportement : ligne dans `subscription_gift_runs` et
+  `subscription_gift_run_users`, puis `update_user_expiration` (recalcul du statut,
+  réactivation, retrait de la politique « expired_subscription », modèle de mail
+  « changement d'expiration »). Le gift se fait en mode « utilisateur » comme le
+  gift ciblé de l'interface, qui ajoute les jours à la date d'expiration actuelle.
+- Statuts autorisés : ceux que l'interface accepte pour un gift ciblé (`active`,
+  `expiring_soon`, `reminder`) avec au moins un compte média. Sinon **409** avec
+  `status` (notamment `removed`, `suspended`, mais aussi `expired`, `invited`,
+  `unknown`, ou aucun compte). Aucune prolongation silencieuse. Utilisateur inconnu : 404.
+- Idempotence : en-tête optionnel `X-Request-Id` (128 caractères au plus). Le même
+  identifiant avec les mêmes paramètres dans les 10 minutes renvoie la même
+  réponse (`Idempotent-Replay: true`) sans second gift ; avec d'autres paramètres :
+  409. Les erreurs ne sont pas mémorisées. La mémoire est celle du processus : un
+  redémarrage la vide.
+- Auth : mêmes règles que le reste (clé, 404 sur l'hôte du portail). Cette route est
+  exemptée du jeton CSRF de session.
+
+Réponse 200 :
+
+```json
+{
+  "generated_at": "2026-11-23T12:00:00Z",
+  "user_id": 10,
+  "gift_id": 3,
+  "days_added": 365,
+  "old_expiration_date": "2026-11-23",
+  "new_expiration_date": "2027-11-23",
+  "status": "active",
+  "status_label": "Active"
+}
+```
+
+Si la date d'expiration stockée est illisible, l'interface part d'aujourd'hui ; l'API
+fait de même (comportement hérité).
+
 ## Limites connues
 
 - **Historique des serveurs** : VODUM ne conserve aucun historique de
@@ -252,11 +302,11 @@ terminé, ou qu'une demande Seerr suivie n'est pas `available`, `declined`,
 
 ## Tests
 
-`tests/test_dashboard_api.py` (le dossier `tests/` est ignoré par `.gitignore` ;
+`tests/test_dashboard_api.py` et `tests/test_dashboard_gift.py` (le dossier `tests/` est ignoré par `.gitignore` ;
 le fichier est ajouté de force) construit une base à partir de `tables.sql`, enregistre
 la vraie garde d'accès et couvre chaque endpoint, les huit statuts, les bornes
 d'expiration, clé absente/fausse, hôte du portail, méthodes d'écriture et `pii`.
 
 ```powershell
-$env:PYTHONPATH = "app"; python -m pytest tests/test_dashboard_api.py
+$env:PYTHONPATH = "app"; python -m pytest tests/test_dashboard_api.py tests/test_dashboard_gift.py
 ```

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 
 PUBLIC_PREFIXES = ("/static/", "/branding/", "/login/artwork/")
 PUBLIC_EXACT = frozenset({"/favicon.ico", "/health", "/set_language"})
@@ -18,6 +20,14 @@ SETUP_FLOW_EXACT = frozenset(
         "/auth/jellyfin/wizard",
     }
 )
+
+
+DASHBOARD_WRITE_RE = re.compile(r"^/api/dashboard/v1/users/\d+/gift$")
+
+
+def is_dashboard_write_path(path: str) -> bool:
+    """The single POST route of the dashboard API (API-key auth, no CSRF token)."""
+    return bool(DASHBOARD_WRITE_RE.match(str(path or "")))
 
 
 def classify_route_path(path: str) -> str:
