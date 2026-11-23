@@ -16,8 +16,8 @@ Une seule route d'écriture existe : `POST /users/<id>/gift` (voir plus bas).
 | Clé absente, vide ou fausse | **404** (pas 401), pour ne pas révéler l'existence de l'API. |
 | Méthodes | `GET` (et `HEAD`), plus `POST /users/<id>/gift`. Toute autre méthode : 404 (jamais 405 ; le garde CSRF global répond 403 à un `POST` ailleurs, comme pour toute l'application). |
 | Hôte du portail | 404 sur `/api/dashboard/*`, comme pour toutes les routes d'administration ([garde globale](../app/core/global_access_guard.py)). |
-| Filtre IP | Le filtre existant (`VODUM_IP_FILTER`, `VODUM_ALLOWED_NETS`) s'applique avant. Le défaut couvre `172.16.0.0/12`, donc le réseau Saltbox `172.19.0.0/16`. |
-| Session | Pas de session ni d'Authelia côté application : la clé suffit (la route est classée `dashboard_api` dans [`route_access_policy.py`](../app/core/route_access_policy.py)). |
+| Filtre IP | Le filtre existant (`VODUM_IP_FILTER`, `VODUM_ALLOWED_NETS`) s'applique avant. Le défaut couvre `172.16.0.0/12`, donc le réseau Docker du reverse proxy. |
+| Session | Pas de session ni d'authentification de portail côté application : la clé suffit (la route est classée `dashboard_api` dans [`route_access_policy.py`](../app/core/route_access_policy.py)). |
 | Cache | `Cache-Control: no-store`. |
 
 Préfixe : `/api/dashboard/v1`. Toutes les réponses sont du JSON avec
@@ -298,7 +298,7 @@ fait de même (comportement hérité).
 2. Définir `VODUM_DASHBOARD_API_KEY` dans l'environnement du stack (Portainer),
    pas dans le fichier compose du dépôt.
 3. Router Traefik pour `/api/dashboard/` sur l'hôte d'administration **sans**
-   Authelia mais avec liste d'IP autorisées (`172.19.0.0/16`) ; accès interne
+   authentification de portail mais avec liste d'IP autorisées du réseau interne ; accès interne
    possible via `http://vodum:5000/api/dashboard/v1/...`.
 4. Aucune migration de base.
 
