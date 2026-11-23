@@ -12,7 +12,8 @@ from core.library_request_routing import compatible_arr_type, route_matches_medi
 from core.portal_media_requests_seerr import (seerr_can_request_4k, seerr_details, seerr_error_result,
     seerr_find_user, seerr_is_4k, seerr_media_state, seerr_metadata, seerr_request_payload,
     seerr_request_result, seerr_request_state, seerr_search, seerr_seasons, seerr_user_lookup_keys)
-from core.portal_media_requests_tvdb import (covers_seasons, details_tvdb_id, find_existing_request,
+from core.portal_media_requests_tvdb import (covers_seasons, default_server_missing, details_tvdb_id,
+                                              find_existing_request,
                                               resolve_tvdb, sonarr_candidates, tvdb_options)
 from core.portal_provider_identity_state import row_media_identity_is_usable
 from core.plex_guids import plex_external_guid
@@ -796,6 +797,10 @@ def submit_seerr_request(db,user_id,library_id,kind,external_id,resolution='', *
                 return seerr_request_result(existing) or 'portal_requests_pending'
         if state == 'pending': return 'portal_requests_pending'
         seerr_user = member()
+        if default_server_missing(api, server, kind, is_4k):
+            get_logger('portal_media_requests').warning(
+                'Seerr has no default %s server for 4k=%s seerr_id=%s', 'Sonarr' if kind == 'series' else 'Radarr', is_4k, server['id'])
+            raise MediaRequestError('portal_requests_seerr_no_default_server')
         tvdb_id = known_tvdb
         if kind == 'series' and tvdb_id is None:
             try:

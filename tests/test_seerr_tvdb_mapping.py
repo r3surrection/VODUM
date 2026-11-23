@@ -25,13 +25,14 @@ def candidate(tvdb, tmdb=None, title='Checkerin Marina', year=2024):
 
 
 class FakeSeerr:
-    def __init__(self, *, tvdb=None, candidates=(), requests=(), post_error=None, status=None):
+    def __init__(self, *, tvdb=None, candidates=(), requests=(), post_error=None, status=None, services=None):
         self.details = {'id': TMDB, 'externalIds': {'tvdbId': tvdb}, 'genres': [],
                         'mediaInfo': {'status': status} if status else None,
                         'seasons': [{'seasonNumber': 1, 'episodeCount': 8}]}
         self.candidates = list(candidates)
         self.requests = list(requests)
         self.post_error = post_error
+        self.services = services if services is not None else [{'id': 1, 'name': 'Arr', 'isDefault': True, 'is4k': False}]
         self.posts = []
         self.paths = []
 
@@ -46,8 +47,10 @@ class FakeSeerr:
             return self.details
         if path == '/api/v1/movie/9':
             return {'id': 9, 'externalIds': {}, 'genres': []}
-        if path == '/api/v1/service/sonarr':
-            return [{'id': 1, 'name': 'Sonarr'}]
+        if path in ('/api/v1/service/sonarr', '/api/v1/service/radarr'):
+            if self.services is None:
+                raise MediaRequestError('portal_requests_unavailable')
+            return self.services
         if path == f'/api/v1/service/sonarr/lookup/{TMDB}':
             return self.candidates
         if path == '/api/v1/request':
@@ -99,7 +102,7 @@ def test_known_tvdb_id_skips_the_lookup(seerr):
     seerr(fake)
     submit()
     assert fake.posts[0]['tvdbId'] == 999
-    assert not any('service/sonarr' in path for path in fake.paths)
+    assert not any('/lookup/' in path for path in fake.paths)
 
 
 def test_ambiguous_candidates_need_a_choice(seerr):
@@ -183,8 +186,34 @@ def test_movie_flow_is_untouched(seerr):
     result, seen = submit('movie', 9)
     assert result == 'portal_requests_added'
     assert fake.posts == [{'mediaType': 'movie', 'mediaId': 9, 'userId': 7, 'is4k': False}]
-    assert fake.paths == ['/api/v1/movie/9', '/api/v1/request']
+    assert fake.paths == ['/api/v1/movie/9', '/api/v1/service/radarr', '/api/v1/request']
     assert seen[-1]['seerr_request_id'] == 77
+
+
+def test_no_default_server_stops_before_the_post(seerr):
+    for kind, tmdb in (('series', TMDB), ('movie', 9)):
+        fake = FakeSeerr(tvdb=441454, services=[{'id': 1, 'isDefault': False, 'is4k': False},
+                                                {'id': 2, 'isDefault': True, 'is4k': True}])
+        seerr(fake)
+        with pytest.raises(MediaRequestError) as error:
+            submit(kind, tmdb)
+        assert str(error.value) == 'portal_requests_seerr_no_default_server'
+        assert fake.posts == []
+
+
+def test_default_for_the_4k_tier_is_required_for_4k(seerr):
+    fake = FakeSeerr(tvdb=441454, services=[{'id': 1, 'isDefault': True, 'is4k': False}])
+    seerr(fake)
+    submit()
+    assert fake.posts[0]['is4k'] is False
+
+
+def test_unreadable_service_list_does_not_block(seerr, monkeypatch):
+    from core.portal_media_requests_tvdb import default_server_missing
+    def broken(server, path, **kwargs):
+        raise MediaRequestError('portal_requests_unavailable')
+    assert default_server_missing(broken, SERVER, 'series') is False
+    assert default_server_missing(lambda *a, **k: {'oops': 1}, SERVER, 'series') is False
 
 
 def test_candidate_helpers():

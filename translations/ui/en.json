@@ -2992,6 +2992,7 @@
   "portal_requests_add_failed": "Sonarr/Radarr rejected the media addition. Technical details are available in the administrator logs.",
   "portal_requests_add_uncertain": "The Sonarr/Radarr response is uncertain. The media may have been added; retrying will check its presence before adding.",
   "portal_requests_seerr_tvdb_unresolved": "Seerr could not match this series to a TVDB series, so nothing was requested. Please contact the administrator.",
+  "portal_requests_seerr_no_default_server": "Seerr has no default Sonarr/Radarr set up for this request, so nothing was requested. Please contact the administrator.",
   "portal_requests_seerr_unconfirmed": "Seerr did not clearly confirm the request. It may have been created; trying again first checks whether it already exists in Seerr.",
   "portal_requests_tvdb_title": "Choose the series",
   "portal_requests_tvdb_help": "No TVDB series is linked to this title. Pick the matching series.",

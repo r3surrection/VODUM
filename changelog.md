@@ -27,4 +27,5 @@ Fork only (r3surrection/VODUM, not part of upstream)
 - GHCR image workflow for the fork/main deploy branch.
 - Seerr series without a TVDB id: the portal now asks Seerr's Sonarr lookup for the TVDB series, takes a single match over automatically and otherwise shows a picker (poster, title, year). The choice is sent as tvdbId, so the request reaches Sonarr. Without any match the member gets a clear message and nothing is requested.
 - Seerr requests with a lost answer are no longer left as "done" without an id: VODUM finds the member's existing Seerr request (same user and TMDB id) and attaches its id, so the status shows in the portal; a retry attaches instead of requesting twice. New texts in all languages.
+- Seerr requests are no longer sent when Seerr has no default Sonarr/Radarr for the requested tier (HD or 4K): Seerr would only log a warning and leave the request "approved" forever. The member gets a clear message instead.
 These changes are currently listed as unreleased. Production deployment and validation are not implied.

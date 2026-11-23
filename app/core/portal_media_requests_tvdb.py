@@ -133,3 +133,22 @@ def covers_seasons(request, seasons):
     if seasons:
         return set(seasons) <= have
     return True
+
+
+_SERVICES = {'movie': 'radarr', 'series': 'sonarr'}
+
+
+def default_server_missing(api, server, kind, is_4k=False):
+    """True when Seerr has no default Radarr/Sonarr for this tier, so a request would never be handed over.
+
+    Seerr then only logs a warning and the request stays "approved" forever.
+    The check is best effort: if the list cannot be read, the request goes ahead.
+    """
+    try:
+        services = api(server, '/api/v1/service/' + _SERVICES[kind])
+    except Exception:
+        return False
+    if not isinstance(services, list):
+        return False
+    return not any(isinstance(row, dict) and row.get('isDefault') and bool(row.get('is4k')) == bool(is_4k)
+                   for row in services)
