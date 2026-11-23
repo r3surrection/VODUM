@@ -113,6 +113,7 @@ def _build_db(path: Path):
         ("j4", 2, "movie", 14, "Declined movie", "seerr", "done", 104, "declined", "2026-11-19 10:00:00"),
         ("j5", 2, "movie", 15, "Queued", "arr", "queued", None, None, "2026-11-23 09:00:00"),
         ("j6", 1, "movie", 16, "Arr done", "arr", "done", None, None, "2026-11-18 10:00:00"),
+        ("j7", 1, "movie", 17, "Removed movie", "seerr", "done", 107, "removed", "2026-11-17 10:00:00"),
     ]
     for j in jobs:
         conn.execute("INSERT INTO portal_media_request_jobs(id,account_id,kind,external_id,title,source,status,"
@@ -365,11 +366,35 @@ def test_requests_default_is_open(client):
     assert data["requests"][0]["state"] == "queued" and data["requests"][0]["seerr_id"] is None
 
 
+def test_removed_request_is_not_open(client):
+    open_titles = [r["title"] for r in get(client, "/requests", query_string={"state": "open"}).get_json()["requests"]]
+    assert "Removed movie" not in open_titles
+    removed = get(client, "/requests", query_string={"state": "removed"}).get_json()["requests"][0]
+    assert removed["open"] is False
+    assert get(client, "/stats").get_json()["requests_open"] == 3
+
+
+@pytest.mark.parametrize("state", ["removed", "deleted", "declined", "failed", "available", "done", "weird"])
+def test_closed_states_are_not_open(state):
+    assert not dashboard._request_is_open({"status": "done", "seerr_request_id": 1, "seerr_state": state})
+
+
+@pytest.mark.parametrize("state", ["pending_approval", "approved"])
+def test_open_seerr_states(state):
+    assert dashboard._request_is_open({"status": "done", "seerr_request_id": 1, "seerr_state": state})
+
+
+@pytest.mark.parametrize("status", ["queued", "checking", "submitting"])
+def test_open_job_statuses(status):
+    assert dashboard._request_is_open({"status": status, "seerr_request_id": None, "seerr_state": None})
+
+
 def test_requests_state_filters(client):
     titles = lambda s: [r["title"] for r in get(client, "/requests", query_string={"state": s}).get_json()["requests"]]
-    assert len(titles("all")) == 6
+    assert len(titles("all")) == 7
     assert titles("available") == ["Available movie"]
     assert titles("declined") == ["Declined movie"]
+    assert titles("removed") == ["Removed movie"]
     assert titles("done") == ["Arr done"]
     assert titles("approved") == ["Approved show"]
     assert titles("nonsense") == []
@@ -415,9 +440,9 @@ def test_stats(client):
         "active": 5, "expiring_soon": 1, "reminder": 3, "expired": 2,
         "invited": 1, "removed": 1, "suspended": 1, "unknown": 1}
     assert data["users_by_plan"] == {"(none)": 1, "Forever": 1, "Monthly": 13}
-    assert data["requests_total"] == 6 and data["requests_open"] == 3
+    assert data["requests_total"] == 7 and data["requests_open"] == 3
     assert data["requests_by_state"] == {
-        "approved": 1, "available": 1, "declined": 1, "done": 1, "pending_approval": 1, "queued": 1}
+        "approved": 1, "available": 1, "declined": 1, "done": 1, "pending_approval": 1, "queued": 1, "removed": 1}
     assert data["expiring_7d"] == 5 and data["expiring_30d"] == 8
 
 

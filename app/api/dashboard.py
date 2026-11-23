@@ -49,7 +49,9 @@ GIFT_DEFAULT_DAYS = 365
 GIFT_NOTE_MAX = 200
 GIFT_IDEMPOTENCY_SECONDS = 600
 GIFT_ELIGIBLE_STATUSES = ("active", "pre_expired", "reminder")
-FINAL_REQUEST_STATES = ("declined", "failed", "available", "deleted")
+# A media request is open only in these states; everything else (removed, deleted,
+# declined, failed, available, done, unknown values) is closed.
+OPEN_REQUEST_STATES = ("pending_approval", "approved", "queued", "checking", "submitting")
 
 # Vodum's stored status -> (API slug, label).
 STATUS_MAP = {
@@ -406,11 +408,7 @@ def _request_state(row) -> str:
 
 
 def _request_is_open(row) -> bool:
-    if str(row["status"] or "") != "done":
-        return True
-    if row["seerr_request_id"] is not None:
-        return str(row["seerr_state"] or "") not in FINAL_REQUEST_STATES
-    return False
+    return _request_state(row) in OPEN_REQUEST_STATES
 
 
 @isolated_read_operation

@@ -42,7 +42,7 @@ authentifiées répondent `400 {"error": "..."}`.
 | `/users?status=&limit=&pii=` | utilisateurs logiques ; `status` accepte `active`, `expiring_soon`, `reminder`, `expired`, `invited`, `removed`, `suspended`, `unknown` (aussi les noms internes `pre_expired`, `unfriended` et les libellés) ; `limit` 1–5000 (défaut 1000) |
 | `/users/<id>` | un utilisateur avec historique des gifts (100 derniers) et comptes détaillés |
 | `/expiring?days=30` | expiration dans 0…`days` jours (`days` 0–3650), triée par date puis id |
-| `/requests?state=open` | demandes de médias ; `state` = `open` (défaut), `all` ou un état exact (`pending_approval`, `approved`, `available`, `declined`, `failed`, `queued`, `checking`, `submitting`, `done`) |
+| `/requests?state=open` | demandes de médias ; `state` = `open` (défaut), `all` ou un état exact (`pending_approval`, `approved`, `available`, `declined`, `failed`, `removed`, `queued`, `checking`, `submitting`, `done`) ; « ouvert » = `pending_approval`, `approved`, `queued`, `checking`, `submitting` |
 | `/servers` | état de chaque serveur, lectures en cours, historique 7 jours |
 | `/tasks` | tâches de fond (nom, dernier/prochain passage, résultat) |
 | `/stats` | compteurs |
