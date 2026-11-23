@@ -25,4 +25,6 @@ Fork only (r3surrection/VODUM, not part of upstream)
 - Dashboard API: read-only JSON API under /api/dashboard/v1 (health, users, users/<id>, expiring, requests, servers, tasks, stats) plus POST users/<id>/gift, using the shared gift logic. Details: docs/dashboard-api.md.
 - Dashboard API admin page with an on/off switch and database-backed API keys (stored as hashes, shown once); the VODUM_DASHBOARD_API_KEY environment variable still works.
 - GHCR image workflow for the fork/main deploy branch.
+- Seerr series without a TVDB id: the portal now asks Seerr's Sonarr lookup for the TVDB series, takes a single match over automatically and otherwise shows a picker (poster, title, year). The choice is sent as tvdbId, so the request reaches Sonarr. Without any match the member gets a clear message and nothing is requested.
+- Seerr requests with a lost answer are no longer left as "done" without an id: VODUM finds the member's existing Seerr request (same user and TMDB id) and attaches its id, so the status shows in the portal; a retry attaches instead of requesting twice. New texts in all languages.
 These changes are currently listed as unreleased. Production deployment and validation are not implied.
