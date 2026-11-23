@@ -15,6 +15,7 @@ from api import dashboard
 from core.csrf_security import csrf_request_guard
 from core.global_access_guard import register_global_access_guard
 from core.portal_media_request_jobs import JOB_SCHEMA, JOB_INDEXES
+from core.db_bootstrap_dashboard_api import ensure_dashboard_api_schema
 
 ROOT = Path(__file__).resolve().parents[1]
 KEY = "test-key-not-a-secret"
@@ -31,6 +32,15 @@ def _build_db(path: Path):
     conn.execute(JOB_SCHEMA)
     for statement in JOB_INDEXES:
         conn.execute(statement)
+    # Same bootstrap step as the container start (dashboard_api_keys, settings.dashboard_api_enabled).
+    def _table_exists(cur, table):
+        return cur.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone() is not None
+
+    def _ensure_column(cur, table, column, definition):
+        if not any(r[1] == column for r in cur.execute(f"PRAGMA table_info({table})").fetchall()):
+            cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+    ensure_dashboard_api_schema(conn, conn.cursor(), table_exists=_table_exists, ensure_column=_ensure_column)
     conn.execute("""CREATE TABLE admin_auth_identities (
         id INTEGER PRIMARY KEY, admin_account_id INTEGER, provider TEXT, is_active INTEGER)""")
     conn.execute("INSERT OR IGNORE INTO settings(id) VALUES (1)")

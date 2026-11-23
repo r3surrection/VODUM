@@ -32,7 +32,6 @@ from core.db_bootstrap_task_catalog import seed_default_tasks
 from core.db_bootstrap_admin_auth import ensure_admin_auth_schema
 from core.db_bootstrap_portal import ensure_portal_foundation_schema
 from core.db_bootstrap_payments import ensure_payment_schema
-from core.db_bootstrap_dashboard_api import ensure_dashboard_api_schema
 from core.db_bootstrap_collections import ensure_collection_schema
 
 
@@ -129,13 +128,7 @@ def run_migrations():
         ensure_column=ensure_column,
     )
 
-    # Fork addition: dashboard API keys and on/off switch.
-    ensure_dashboard_api_schema(
-        conn,
-        cursor,
-        table_exists=table_exists,
-        ensure_column=ensure_column,
-    )
+    from core.db_bootstrap_dashboard_api import ensure_dashboard_api_schema; ensure_dashboard_api_schema(conn, cursor, table_exists=table_exists, ensure_column=ensure_column)  # fork: dashboard api
 
     migrate_task_scheduler_mode(
         conn,

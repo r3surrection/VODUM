@@ -18,7 +18,7 @@ from core.csrf_security import csrf_request_guard
 from core.db_bootstrap_dashboard_api import ensure_dashboard_api_schema
 from core.global_access_guard import register_global_access_guard
 from db_manager import DBManager
-from routes import dashboard_api_admin
+from routes.dashboard_api_admin import register_dashboard_api_admin
 from test_dashboard_api import (  # noqa: F401  (fixtures and helpers)
     ADMIN_HOST, KEY, NOW, client, env, get,
 )
@@ -201,7 +201,7 @@ def admin_app(env):
         session["_csrf_token"] = "csrf-test"
         return csrf_request_guard()
 
-    dashboard_api_admin.register(app)
+    register_dashboard_api_admin(app)
     return app
 
 
@@ -225,25 +225,25 @@ def test_page_lists_env_row_and_keys_without_clear_text(env, admin):
     revoked, raw2 = api_keys.create_key(db, "Old one", now=NOW - timedelta(days=2))
     api_keys.revoke_key(db, revoked["id"], now=NOW)
     html = admin.get("/settings/dashboard-api").get_data(as_text=True)
-    assert "[dashboard_api_env_key]" in html           # environment variable row
+    assert "[dashboard_api.env_key]" in html           # environment variable row
     assert "Plex dashboard" in html and raw[:6] + "&hellip;" in html
     assert raw not in html and raw2 not in html and api_keys.hash_key(raw) not in html
-    assert "[dashboard_api_revoked]" in html
-    assert html.count("[dashboard_api_revoke]") == 1   # only the active key has a revoke button
-    assert "[enabled]" in html and "[dashboard_api_disable]" in html
+    assert "[dashboard_api.revoked]" in html
+    assert html.count("[dashboard_api.revoke]") == 1   # only the active key has a revoke button
+    assert "[enabled]" in html and "[dashboard_api.disable]" in html
 
 
 def test_page_without_env_variable_has_no_env_row(admin, monkeypatch):
     monkeypatch.delenv("VODUM_DASHBOARD_API_KEY")
     html = admin.get("/settings/dashboard-api").get_data(as_text=True)
-    assert "[dashboard_api_env_key]" not in html and "[dashboard_api_no_keys]" in html
+    assert "[dashboard_api.env_key]" not in html and "[dashboard_api.no_keys]" in html
 
 
 def test_create_shows_the_key_exactly_once(env, admin, client):
     response = admin.post("/settings/dashboard-api/keys", data={"name": "New dash", "_csrf_token": "csrf-test"})
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert "[dashboard_api_key_created_title]" in html
+    assert "[dashboard_api.key_created_title]" in html
     rows = raw_rows(env)
     assert len(rows) == 1 and rows[0]["name"] == "New dash"
     start = html.index('id="dashboard-api-new-key"')
@@ -278,7 +278,7 @@ def test_toggle_from_page(env, admin, client):
     assert admin.post("/settings/dashboard-api/toggle", data={"enabled": "0", "_csrf_token": "csrf-test"}).status_code == 302
     assert get(client, "/health").status_code == 404
     html = admin.get("/settings/dashboard-api").get_data(as_text=True)
-    assert "[dashboard_api_disabled_notice]" in html and "[dashboard_api_enable]" in html
+    assert "[dashboard_api.disabled_notice]" in html and "[dashboard_api.enable]" in html
     assert admin.post("/settings/dashboard-api/toggle", data={"enabled": "1", "_csrf_token": "csrf-test"}).status_code == 302
     assert get(client, "/health").status_code == 200
 

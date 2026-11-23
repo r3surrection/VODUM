@@ -495,6 +495,7 @@ def create_app():
     # Blueprints
     app.register_blueprint(subscriptions_api)
     app.register_blueprint(dashboard_api)
+    from routes.dashboard_api_admin import register_dashboard_api_admin; register_dashboard_api_admin(app)  # fork: dashboard api
     app.register_blueprint(users_bp)
 
     # Global access control must not depend on any feature route module.

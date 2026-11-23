@@ -1,0 +1,5 @@
+/* Fork addition: admin page "Dashboard API" (templates/dashboard_api/settings.html). */
+.dapi-key{display:block;min-width:0;flex:1;word-break:break-all;user-select:all;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.875rem;line-height:1.5}
+.dapi-table td,.dapi-table th{white-space:nowrap}
+.dapi-table td:first-child{white-space:normal;max-width:18rem}
+.dapi-endpoints code{word-break:break-all}
