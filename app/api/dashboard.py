@@ -1,8 +1,11 @@
 """Read-only JSON API for the Plex dashboard (fork addition, not part of upstream).
 
-Every route is GET-only and guarded by the ``X-Api-Key`` header, compared to the
-``VODUM_DASHBOARD_API_KEY`` environment variable. A missing, empty or wrong key
-answers 404 so the API's existence is not visible; so does an unset variable.
+Every route is guarded by the ``X-Api-Key`` header. A request is accepted when
+the header matches a non-revoked key of the ``dashboard_api_keys`` table (managed
+on the admin page "Dashboard API", see ``core.dashboard_api_keys``) or the
+``VODUM_DASHBOARD_API_KEY`` environment variable (bootstrap key). A missing,
+empty or wrong key answers 404 so the API's existence is not visible; so does
+the switch ``settings.dashboard_api_enabled = 0``.
 The global access guard additionally answers 404 on the portal host and for any
 non-GET method (see ``core.global_access_guard``).
 
@@ -11,7 +14,6 @@ with ``?pii=1`` (and a valid key).
 """
 from __future__ import annotations
 
-import hmac
 import json
 import os
 import re
@@ -22,6 +24,7 @@ from pathlib import Path
 
 from flask import Blueprint, abort, current_app, jsonify, request
 
+from core import dashboard_api_keys as api_keys
 from core.expiration_rules import parse_expiration_date
 from db_manager import isolated_read_operation
 from logging_utils import get_logger
@@ -31,7 +34,7 @@ from web.helpers import get_db
 log = get_logger("api.dashboard")
 
 API_PREFIX = "/api/dashboard/v1"
-KEY_ENV = "VODUM_DASHBOARD_API_KEY"
+KEY_ENV = api_keys.KEY_ENV
 dashboard_api = Blueprint("dashboard_api", __name__, url_prefix=API_PREFIX)
 
 _STARTED = time.monotonic()
@@ -168,12 +171,17 @@ def _health_state(value) -> str:
 
 @dashboard_api.before_request
 def _require_key():
-    expected = (os.environ.get(KEY_ENV) or "").strip()
     given = (request.headers.get("X-Api-Key") or "").strip()
-    if not expected or not given or not hmac.compare_digest(
-        expected.encode("utf-8"), given.encode("utf-8")
-    ):
+    if not given:
         abort(404)
+    db = get_db()
+    if not api_keys.api_enabled(db):
+        abort(404)
+    if api_keys.env_key_matches(given):
+        return None
+    if api_keys.authenticate(db, given, now=_now()):
+        return None
+    abort(404)
 
 
 @dashboard_api.after_request

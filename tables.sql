@@ -449,6 +449,7 @@ CREATE TABLE IF NOT EXISTS settings (
     web_cookie_samesite TEXT DEFAULT 'Lax',
     web_trust_proxy INTEGER DEFAULT 0,
     portal_enabled INTEGER NOT NULL DEFAULT 0,
+    dashboard_api_enabled INTEGER NOT NULL DEFAULT 1,
     portal_local_test_enabled INTEGER NOT NULL DEFAULT 0,
     portal_public_url TEXT DEFAULT NULL,
     portal_support_email TEXT DEFAULT NULL,
@@ -828,6 +829,18 @@ VALUES (2, 'init_v2');
 -- ---------------------------------------------------------------------
 -- historique des gifts 
 -- ---------------------------------------------------------------------
+-- Fork addition: API keys of the dashboard API (hashes only, see app/core/dashboard_api_keys.py)
+CREATE TABLE IF NOT EXISTS dashboard_api_keys (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    key_hash TEXT NOT NULL UNIQUE,
+    key_prefix TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_used_at TEXT DEFAULT NULL,
+    revoked_at TEXT DEFAULT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dashboard_api_keys_hash ON dashboard_api_keys(key_hash);
+
 CREATE TABLE IF NOT EXISTS subscription_gift_runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

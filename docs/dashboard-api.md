@@ -9,8 +9,10 @@ Une seule route d'écriture existe : `POST /users/<id>/gift` (voir plus bas).
 
 | Élément | Règle |
 |---|---|
-| Variable d'environnement | `VODUM_DASHBOARD_API_KEY` : clé attendue. Vide ou absente = API désactivée (404). À fournir par l'environnement du stack, jamais dans le dépôt. |
-| En-tête | `X-Api-Key: <clé>` (comparaison à temps constant). |
+| Interrupteur | Page d'administration **Dashboard API** (`/settings/dashboard-api`) : `settings.dashboard_api_enabled`. À 0, toute requête répond 404, quelle que soit la clé. |
+| Clés en base | Créées sur la même page (nom libre, clé affichée une seule fois) ; stockées dans `dashboard_api_keys` sous forme de hachage SHA-256 avec un préfixe de 6 caractères, `created_at`, `last_used_at` (mis à jour au plus une fois par minute) et `revoked_at`. Révocation définitive avec confirmation. |
+| Variable d'environnement | `VODUM_DASHBOARD_API_KEY` : clé d'amorçage, toujours acceptée en plus des clés en base, listée sur la page comme « Variable d'environnement (active) » et non révocable. Absente = seules les clés en base comptent. À fournir par l'environnement du stack, jamais dans le dépôt. |
+| En-tête | `X-Api-Key: <clé>` (comparaison à temps constant ; clé en base comparée par hachage). |
 | Clé absente, vide ou fausse | **404** (pas 401), pour ne pas révéler l'existence de l'API. |
 | Méthodes | `GET` (et `HEAD`), plus `POST /users/<id>/gift`. Toute autre méthode : 404 (jamais 405 ; le garde CSRF global répond 403 à un `POST` ailleurs, comme pour toute l'application). |
 | Hôte du portail | 404 sur `/api/dashboard/*`, comme pour toutes les routes d'administration ([garde globale](../app/core/global_access_guard.py)). |
