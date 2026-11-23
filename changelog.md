@@ -21,4 +21,8 @@ Monitoring & Performance
 Security & Reliability
 - Fixed trusted reverse-proxy header handling under Waitress, preserving VODUM's proxy validation and HTTPS/client-address detection.
 - Improved Plex session termination verification to avoid treating malformed or incomplete responses as successful termination.
+Fork only (r3surrection/VODUM, not part of upstream)
+- Dashboard API: read-only JSON API under /api/dashboard/v1 (health, users, users/<id>, expiring, requests, servers, tasks, stats) plus POST users/<id>/gift, using the shared gift logic. Details: docs/dashboard-api.md.
+- Dashboard API admin page with an on/off switch and database-backed API keys (stored as hashes, shown once); the VODUM_DASHBOARD_API_KEY environment variable still works.
+- GHCR image workflow for the fork/main deploy branch.
 These changes are currently listed as unreleased. Production deployment and validation are not implied.
