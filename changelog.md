@@ -23,6 +23,7 @@ Security & Reliability
 - Improved Plex session termination verification to avoid treating malformed or incomplete responses as successful termination.
 Fork only (r3surrection/VODUM, not part of upstream)
 - Dashboard API: read-only JSON API under /api/dashboard/v1 (health, users, users/<id>, expiring, requests, servers, tasks, stats) plus POST users/<id>/gift, using the shared gift logic. Details: docs/dashboard-api.md.
+- Dashboard API monitoring endpoints: read-only /api/dashboard/v1/monitoring/ overview, live, activity, heatmap, top, locations, usage-risk, events and artwork, with previous-period comparison, sparklines, partial-day flags, week buckets (KW) from six months, a 7x24 heatmap in Europe/Berlin, and city-level locations. No IP or mail address is ever returned. Details: docs/dashboard-api.md.
 - Dashboard API admin page with an on/off switch and database-backed API keys (stored as hashes, shown once); the VODUM_DASHBOARD_API_KEY environment variable still works.
 - GHCR image workflow for the fork/main deploy branch.
 - Seerr series without a TVDB id: the portal now asks Seerr's Sonarr lookup for the TVDB series, takes a single match over automatically and otherwise shows a picker (poster, title, year). The choice is sent as tvdbId, so the request reaches Sonarr. Without any match the member gets a clear message and nothing is requested.
