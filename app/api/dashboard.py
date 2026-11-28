@@ -798,3 +798,7 @@ def gift_user(user_id: int):
             _gift_replays[request_id] = (mono, fingerprint, payload)
         log.info("dashboard gift: user=%s days=%s run=%s", user_id, days, run_id)
         return jsonify(payload)
+
+
+# Fork addition: read-only monitoring endpoints (kept in their own module).
+from api import dashboard_monitoring  # noqa: E402,F401

@@ -227,6 +227,40 @@ terminé, ou qu'une demande Seerr suivie n'est pas `available`, `declined`,
 }
 ```
 
+## Monitoring : `/api/dashboard/v1/monitoring/...`
+
+Neuf endpoints GET en lecture seule (module `app/api/dashboard_monitoring.py`). Ils partagent la garde
+de la section « Activation et accès » : `X-Api-Key` obligatoire, `Cache-Control: no-store`,
+**404** (et non 401) sans clé, avec une mauvaise clé ou sur l'hôte du portail.
+Chaque réponse contient `computed_at` (UTC, ISO 8601).
+
+| Endpoint | Contenu |
+|---|---|
+| `overview?range=7d` | `metrics` : `active_users`, `sessions`, `watch_hours`, `avg_session_minutes`, `peak_concurrent` ; pour chacune `value`, `previous`, `change_pct`, `sparkline` ; `partial` |
+| `live` | sessions en cours (serveur, nom affiché, type, titre, série, `se` « S01E10 », titre d'épisode, état, `play_method` direct/transcode, `transcode_reason`, client, appareil, `city`/`country`, `progress_pct`, `position_s`, `duration_s`, `remaining_s`, `image_id`), totaux live/direct/transcode et CPU/RAM par serveur |
+| `activity?range=` | par jour (jusqu'à 30 j) ou par semaine « KW nn » (à partir de 180 j) : sessions et heures, réparties par serveur et par type de média ; `partial` par intervalle |
+| `heatmap?range=` | 7×24 en Europe/Berlin, `level` 0–4 (quantiles des cases non vides), `max_cell`, `peak_label` (« Meist: Fr 21 Uhr ») |
+| `top?range=&kind=users\|series\|movies&limit=10` | `plays`, `hours`, `users`, `share_pct` (relatif au premier), `image_id` ; limite 1–50 |
+| `locations?range=` | par ville : `city`, `country`, `lat`/`lon` (2 décimales), `users`, `sessions`, `live` |
+| `usage-risk?range=30d` | par compte : nom affiché, `level` (niedrig/mittel/hoch), `score`, `reasons`, nombres `places`, `devices`, `ips` |
+| `events?limit=50` | une ligne par session : utilisateur, titre, serveur, `start`, `pause`, `pause_count`, `end`, `status` ; limite 1–200 |
+| `artwork/<image_id>?w=160` | affiche via `artwork_proxy` (cache existant) ; `image_id` = `h<id>` (historique) ou `s<id>` (session) ; `w` 32–1000 |
+
+`range` : `7d` (défaut), `30d`, `180d`, `365d`, `all` ; autre valeur → 400.
+
+**Calcul.** Aucun recalcul lourd à la requête. `usage-risk` lit uniquement l'instantané précalculé
+(`ready: false` et liste vide tant que le worker ne l'a pas produit pour cette période ; `all` utilise 365 jours).
+`live` lit les sessions des 5 dernières minutes et les mesures de ressources déjà stockées. Les autres vues
+font une requête bornée sur l'historique, mise en cache en mémoire (5 min) ; `computed_at` est l'heure de ce calcul.
+Les jours sont découpés en heure d'Europe/Berlin. Un intervalle encore en cours, ou une première semaine qui
+commence avant la fenêtre, a `partial: true`. `change_pct` vaut `null` sans période précédente (`all`)
+ou si la valeur précédente est 0. Les lectures sont dédupliquées (même serveur, utilisateur, média, minute de début).
+
+**Vie privée.** Jamais d'adresse IP, d'e-mail, de jeton ni d'URL de serveur : seulement des noms affichés
+(un identifiant ressemblant à un e-mail est réduit à sa partie locale), des villes (ville + pays, sans liste
+d'utilisateurs par ville) et des compteurs. Les textes de raison sont nettoyés (`[ip]`, `[mail]`).
+Les « lieux » de `usage-risk` sont approximés par le nombre de réseaux distincts (/24 ou préfixe IPv6) des adresses observées.
+
 ## Gift : `POST /api/dashboard/v1/users/<id>/gift`
 
 Corps JSON : `{"days": 365, "note": "..."}`.
@@ -304,11 +338,11 @@ fait de même (comportement hérité).
 
 ## Tests
 
-`tests/test_dashboard_api.py` et `tests/test_dashboard_gift.py` (le dossier `tests/` est ignoré par `.gitignore` ;
+`tests/test_dashboard_api.py`, `tests/test_dashboard_gift.py` et `tests/test_dashboard_monitoring_api.py` (le dossier `tests/` est ignoré par `.gitignore` ;
 le fichier est ajouté de force) construit une base à partir de `tables.sql`, enregistre
 la vraie garde d'accès et couvre chaque endpoint, les huit statuts, les bornes
 d'expiration, clé absente/fausse, hôte du portail, méthodes d'écriture et `pii`.
 
 ```powershell
-$env:PYTHONPATH = "app"; python -m pytest tests/test_dashboard_api.py tests/test_dashboard_gift.py
+$env:PYTHONPATH = "app"; python -m pytest tests/test_dashboard_api.py tests/test_dashboard_gift.py tests/test_dashboard_monitoring_api.py
 ```
